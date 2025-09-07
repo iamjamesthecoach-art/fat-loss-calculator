@@ -6,14 +6,17 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Debug log (shows up in Vercel function logs)
+    console.log("🔑 OPENAI_API_KEY exists:", !!process.env.OPENAI_API_KEY);
+
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ message: "Missing API key on server" });
+    }
+
     const { calories, foods } = req.body;
 
     if (!calories || !foods || foods.length === 0) {
       return res.status(400).json({ message: "Missing calories or foods" });
-    }
-
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ message: "Missing OpenAI API key" });
     }
 
     const client = new OpenAI({
@@ -40,6 +43,7 @@ export default async function handler(req, res) {
     res.status(200).json({ plan });
   } catch (error) {
     console.error("Mealplan API Error:", error);
+
     res.status(500).json({
       message: "Error generating meal plan",
       error: error.message,
