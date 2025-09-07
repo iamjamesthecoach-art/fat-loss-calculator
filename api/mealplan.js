@@ -1,87 +1,51 @@
+// api/mealplan.js
 import OpenAI from "openai";
 
-// 🔑 Rate limit store (in-memory, resets if server restarts)
-const rateLimit = {};
-const LIMIT = 5; // requests per IP
-const WINDOW = 60 * 1000; // 1 minute
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY, // 🔒 Never expose this in frontend
+});
 
 export default async function handler(req, res) {
-  // 🔍 Capture request origin
-  const origin = req.headers.origin || "unknown";
-  console.log("🔍 Incoming request origin:", origin);
-
-  // ✅ Allowed origins
-  const allowedOrigins = [
-    "https://productivemindset.uk",
-    "https://www.productivemindset.uk", // add www just in case
-    "http://localhost:3000"
-  ];
-
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-api-key");
-
-  // ✅ Handle preflight
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  // ✅ Allow only POST
+  // ✅ Only allow POST requests
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Method not allowed" });
   }
 
-  // 🔑 Secret key validation
-  if (req.headers["x-api-key"] !== process.env.FRONTEND_SECRET) {
-    console.warn("🚨 Forbidden request: Invalid API key");
-    return res.status(403).json({ message: "Forbidden" });
+  // ✅ API key check for frontend -> backend communication
+  const frontendKey = req.headers["x-api-key"];
+  if (frontendKey !== "supersecret123") {
+    return res.status(401).json({ message: "Unauthorized" });
   }
-
-  // ⏳ Basic rate limiting
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  if (!rateLimit[ip]) {
-    rateLimit[ip] = [];
-  }
-  const now = Date.now();
-  rateLimit[ip] = rateLimit[ip].filter(ts => now - ts < WINDOW);
-
-  if (rateLimit[ip].length >= LIMIT) {
-    console.warn(`🚨 Rate limit hit by IP: ${ip}`);
-    return res.status(429).json({ message: "Too many requests, try again later." });
-  }
-  rateLimit[ip].push(now);
 
   try {
     const { calories, foods } = req.body;
 
-    if (!calories || !foods) {
-      return res.status(400).json({ message: "Calories and foods are required" });
+    if (!calories || !foods || foods.length === 0) {
+      return res.status(400).json({ message: "Missing calories or foods input" });
     }
 
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    // Prompt to OpenAI
+    const prompt = `
+    Create a 1-day fat loss meal plan for around ${calories} calories
+    using only these foods: ${foods.join(", ")}.
+    Ensure at least 30% of calories come from protein.
+    Format it clearly with meals, calories, protein, and totals.
+    `;
 
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        {
-          role: "system",
-          content: "You are a nutrition assistant that creates 1-day fat loss meal plans."
-        },
-        {
-          role: "user",
-          content: `Make a 1-day fat loss meal plan with around ${calories} calories, at least 30% protein, and using only these foods: ${foods.join(", ")}.`
-        }
+        { role: "system", content: "You are a nutritionist creating simple, accurate 1-day fat loss meal plans." },
+        { role: "user", content: prompt },
       ],
-      temperature: 0.7
+      max_tokens: 600,
     });
 
-    const mealPlan = completion.choices[0].message.content;
-    res.status(200).json({ plan: mealPlan });
+    const plan = completion.choices[0].message.content;
+
+    return res.status(200).json({ plan });
   } catch (error) {
-    console.error("❌ Backend Error:", error);
-    res.status(500).json({ message: "Error generating meal plan", error: error.message });
+    console.error("❌ Meal plan generation failed:", error);
+    return res.status(500).json({ message: "Error generating meal plan", error: error.message });
   }
 }
