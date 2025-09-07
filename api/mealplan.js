@@ -6,14 +6,13 @@ const client = new OpenAI({
 });
 
 export default async function handler(req, res) {
-  // ✅ Only allow POST requests
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Method not allowed" });
   }
 
-  // ✅ API key check for frontend -> backend communication
-  const frontendKey = req.headers["x-api-key"];
-  if (frontendKey !== "supersecret123") {
+  // Protect with API key
+  const apiKey = req.headers["x-api-key"];
+  if (apiKey !== process.env.MEALPLAN_API_KEY) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
