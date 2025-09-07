@@ -1,15 +1,27 @@
 import OpenAI from "openai";
 
 export default async function handler(req, res) {
-  // ✅ Lock CORS to your GHL domain
-  res.setHeader("Access-Control-Allow-Origin", "https://fitness.productivemindset.uk");
+  // ✅ Allowed origins
+  const allowedOrigins = [
+    "https://fitness.productivemindset.uk",
+    "http://fitness.productivemindset.uk",  // just in case GHL uses http
+    "http://localhost:3000"                // dev testing
+  ];
+
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
+  // ✅ Handle preflight request
   if (req.method === "OPTIONS") {
-    return res.status(200).end(); // Handle preflight
+    return res.status(200).end();
   }
 
+  // ✅ Only allow POST for actual requests
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Method not allowed" });
   }
@@ -41,7 +53,7 @@ export default async function handler(req, res) {
     const mealPlan = completion.choices[0].message.content;
     res.status(200).json({ plan: mealPlan });
   } catch (error) {
-    console.error(error);
+    console.error("❌ Backend Error:", error);
     res.status(500).json({ message: "Error generating meal plan", error: error.message });
   }
 }
