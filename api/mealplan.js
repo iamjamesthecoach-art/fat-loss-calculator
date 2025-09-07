@@ -1,58 +1,65 @@
 import OpenAI from "openai";
 
-// Initialize OpenAI
+// Initialize OpenAI client
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Simple in-memory store for rate limiting
-const requests = new Map();
-const WINDOW_MS = 60 * 1000; // 1 minute window
-const MAX_REQUESTS = 5; // limit per IP per window
+// In-memory stores
+const ipRequests = {};
+const emailRequests = {};
+
+const IP_LIMIT = 5;            // max per minute
+const IP_WINDOW = 60 * 1000;   // 1 minute
+const EMAIL_DAILY_LIMIT = 20;  // max per user email per day
 
 export default async function handler(req, res) {
-  // ✅ Allow only POST
   if (req.method !== "POST") {
-    console.warn("❌ Invalid request method:", req.method);
     return res.status(405).json({ message: "Method not allowed" });
   }
 
-  // ✅ API key check
+  // ✅ API key validation
   const frontendKey = req.headers["x-api-key"];
   if (frontendKey !== process.env.FRONTEND_KEY) {
-    console.warn("❌ Unauthorized attempt — wrong API key:", frontendKey);
     return res.status(401).json({ message: "Unauthorized" });
   }
 
-  // ✅ Rate limiting
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   const now = Date.now();
-  const record = requests.get(ip) || { count: 0, startTime: now };
 
-  if (now - record.startTime < WINDOW_MS) {
-    if (record.count >= MAX_REQUESTS) {
-      console.warn(`⛔ Rate limit exceeded for IP: ${ip}`);
-      return res.status(429).json({ message: "Too many requests. Please try again later." });
-    }
-    record.count++;
-  } else {
-    // Reset window
-    record.count = 1;
-    record.startTime = now;
+  // --- IP Rate Limit ---
+  if (!ipRequests[ip]) ipRequests[ip] = [];
+  ipRequests[ip] = ipRequests[ip].filter((t) => now - t < IP_WINDOW);
+
+  if (ipRequests[ip].length >= IP_LIMIT) {
+    console.warn(`⚠️ Rate limit exceeded for IP: ${ip}`);
+    return res.status(429).json({ message: "Too many requests from this IP. Slow down." });
+  }
+  ipRequests[ip].push(now);
+
+  // --- Email Rate Limit ---
+  const { calories, foods, email } = req.body;
+  if (!calories || !foods || foods.length === 0) {
+    return res.status(400).json({ message: "Calories and foods are required" });
+  }
+  if (!email) {
+    return res.status(400).json({ message: "Email is required" });
   }
 
-  requests.set(ip, record);
+  const today = new Date().toISOString().split("T")[0]; // e.g. 2025-09-06
+  const emailKey = `${email}-${today}`;
+
+  if (!emailRequests[emailKey]) emailRequests[emailKey] = 0;
+
+  if (emailRequests[emailKey] >= EMAIL_DAILY_LIMIT) {
+    console.warn(`⚠️ Daily email limit exceeded for: ${email}`);
+    return res.status(429).json({ message: "Daily meal plan limit reached for this email." });
+  }
+
+  emailRequests[emailKey]++;
 
   try {
-    const { calories, foods } = req.body;
-
-    if (!calories || !foods || foods.length === 0) {
-      console.warn("❌ Missing input values:", { calories, foods });
-      return res.status(400).json({ message: "Calories and foods are required" });
-    }
-
-    console.log("✅ Meal plan request:", { calories, foods });
-
+    // 🔥 Build GPT prompt
     const prompt = `
     Create a 1-day fat loss meal plan with about ${calories} calories.
     Rules:
@@ -67,14 +74,13 @@ export default async function handler(req, res) {
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: "You are a nutrition assistant." },
-        { role: "user", content: prompt }
+        { role: "user", content: prompt },
       ],
       max_tokens: 600,
     });
 
     const mealPlan = response.choices[0].message.content;
 
-    console.log("✅ Meal plan generated successfully");
     return res.status(200).json({ plan: mealPlan });
 
   } catch (err) {
