@@ -1,8 +1,8 @@
 import OpenAI from "openai";
 
 export default async function handler(req, res) {
-  // Allow requests from anywhere (or lock it to your domain if you prefer)
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // ✅ Lock CORS to your GHL domain
+  res.setHeader("Access-Control-Allow-Origin", "https://fitness.productivemindset.uk");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
@@ -32,7 +32,7 @@ export default async function handler(req, res) {
         },
         {
           role: "user",
-          content: `Make a 1-day fat loss meal plan with around ${calories} calories, at least 30% protein, and using only: ${foods.join(", ")}.`
+          content: `Make a 1-day fat loss meal plan with around ${calories} calories, at least 30% protein, and using only these foods: ${foods.join(", ")}.`
         }
       ],
       temperature: 0.7
