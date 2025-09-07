@@ -1,14 +1,17 @@
 import OpenAI from "openai";
 
 export default async function handler(req, res) {
-  // ✅ Allowed origins
+  // 🔍 Log the incoming request origin for debugging
+  const origin = req.headers.origin || "unknown";
+  console.log("🔍 Incoming request origin:", origin);
+
+  // ✅ Allowed origins (expand this once we know what GHL is really sending)
   const allowedOrigins = [
     "https://fitness.productivemindset.uk",
-    "http://fitness.productivemindset.uk",  // just in case GHL uses http
-    "http://localhost:3000"                // dev testing
+    "http://fitness.productivemindset.uk",
+    "http://localhost:3000"
   ];
 
-  const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
@@ -16,12 +19,12 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // ✅ Handle preflight request
+  // ✅ Handle preflight
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  // ✅ Only allow POST for actual requests
+  // ✅ Allow only POST
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Method not allowed" });
   }
