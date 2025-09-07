@@ -1,15 +1,19 @@
 import OpenAI from "openai";
 
+// 🔑 Rate limit store (in-memory, resets if server restarts)
+const rateLimit = {};
+const LIMIT = 5; // requests per IP
+const WINDOW = 60 * 1000; // 1 minute
+
 export default async function handler(req, res) {
-  // 🔍 Log incoming request origin
+  // 🔍 Capture request origin
   const origin = req.headers.origin || "unknown";
   console.log("🔍 Incoming request origin:", origin);
 
-  // ✅ Allowed origins (now includes productivemindset.uk)
+  // ✅ Allowed origins
   const allowedOrigins = [
     "https://productivemindset.uk",
-    "https://fitness.productivemindset.uk",
-    "http://fitness.productivemindset.uk",
+    "https://www.productivemindset.uk", // add www just in case
     "http://localhost:3000"
   ];
 
@@ -18,7 +22,7 @@ export default async function handler(req, res) {
   }
 
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-api-key");
 
   // ✅ Handle preflight
   if (req.method === "OPTIONS") {
@@ -29,6 +33,26 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Method not allowed" });
   }
+
+  // 🔑 Secret key validation
+  if (req.headers["x-api-key"] !== process.env.FRONTEND_SECRET) {
+    console.warn("🚨 Forbidden request: Invalid API key");
+    return res.status(403).json({ message: "Forbidden" });
+  }
+
+  // ⏳ Basic rate limiting
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  if (!rateLimit[ip]) {
+    rateLimit[ip] = [];
+  }
+  const now = Date.now();
+  rateLimit[ip] = rateLimit[ip].filter(ts => now - ts < WINDOW);
+
+  if (rateLimit[ip].length >= LIMIT) {
+    console.warn(`🚨 Rate limit hit by IP: ${ip}`);
+    return res.status(429).json({ message: "Too many requests, try again later." });
+  }
+  rateLimit[ip].push(now);
 
   try {
     const { calories, foods } = req.body;
