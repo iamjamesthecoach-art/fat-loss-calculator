@@ -1,48 +1,44 @@
-export default async function handler(req, res) {
+const OpenAI = require("openai");
+
+module.exports = async (req, res) => {
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Method not allowed" });
   }
 
-  const { calories, foods } = req.body;
-
-  const prompt = `You are a professional fat loss nutrition coach.
-
-  Create a 1-day fat loss meal plan totalling about ${calories} kcal 
-  with high protein (at least 30% of calories from protein). 
-
-  Rules:
-  - Only use these foods: ${foods.join(", ")}.
-  - Spread protein evenly across 3 main meals + 1 snack.
-  - Show calories and protein for each meal.
-  - Keep meals simple (2–4 ingredients each).
-  - End with a total line showing total calories and protein.
-  `;
-
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "You are a fitness nutritionist." },
-          { role: "user", content: prompt }
-        ],
-      }),
-    });
+    const { calories, foods } = req.body;
 
-    const data = await response.json();
-
-    if (!data.choices) {
-      throw new Error("No response from OpenAI");
+    if (!calories || !foods || foods.length === 0) {
+      return res.status(400).json({ message: "Missing calories or foods" });
     }
 
-    res.status(200).json({ plan: data.choices[0].message.content });
+    const client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    const prompt = `
+      Create a 1-day meal plan for fat loss around ${calories} calories.
+      Only use the following foods: ${foods.join(", ")}.
+      Make it high in protein (at least 30% of calories).
+      Break it into Breakfast, Lunch, Dinner, and Snacks.
+      Show calories and protein for each meal.
+      Add a total at the end.
+    `;
+
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 500,
+    });
+
+    const plan = response.choices[0].message.content;
+
+    res.status(200).json({ plan });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error generating meal plan" });
+    console.error("Mealplan API Error:", error);
+    res
+      .status(500)
+      .json({ message: "Error generating meal plan", error: error.message });
   }
-}
+};
+
