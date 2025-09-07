@@ -1,9 +1,14 @@
 import OpenAI from "openai";
 
-// Initialize client
+// Initialize OpenAI
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // ✅ Never hardcode
+  apiKey: process.env.OPENAI_API_KEY,
 });
+
+// Simple in-memory store for rate limiting
+const requests = new Map();
+const WINDOW_MS = 60 * 1000; // 1 minute window
+const MAX_REQUESTS = 5; // limit per IP per window
 
 export default async function handler(req, res) {
   // ✅ Allow only POST
@@ -12,12 +17,31 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: "Method not allowed" });
   }
 
-  // ✅ API key check for frontend -> backend
+  // ✅ API key check
   const frontendKey = req.headers["x-api-key"];
   if (frontendKey !== process.env.FRONTEND_KEY) {
     console.warn("❌ Unauthorized attempt — wrong API key:", frontendKey);
     return res.status(401).json({ message: "Unauthorized" });
   }
+
+  // ✅ Rate limiting
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  const now = Date.now();
+  const record = requests.get(ip) || { count: 0, startTime: now };
+
+  if (now - record.startTime < WINDOW_MS) {
+    if (record.count >= MAX_REQUESTS) {
+      console.warn(`⛔ Rate limit exceeded for IP: ${ip}`);
+      return res.status(429).json({ message: "Too many requests. Please try again later." });
+    }
+    record.count++;
+  } else {
+    // Reset window
+    record.count = 1;
+    record.startTime = now;
+  }
+
+  requests.set(ip, record);
 
   try {
     const { calories, foods } = req.body;
@@ -29,7 +53,6 @@ export default async function handler(req, res) {
 
     console.log("✅ Meal plan request:", { calories, foods });
 
-    // 🔥 Prompt for GPT
     const prompt = `
     Create a 1-day fat loss meal plan with about ${calories} calories.
     Rules:
@@ -42,8 +65,10 @@ export default async function handler(req, res) {
 
     const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [{ role: "system", content: "You are a nutrition assistant." },
-                 { role: "user", content: prompt }],
+      messages: [
+        { role: "system", content: "You are a nutrition assistant." },
+        { role: "user", content: prompt }
+      ],
       max_tokens: 600,
     });
 
