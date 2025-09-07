@@ -1,12 +1,13 @@
 import OpenAI from "openai";
 
 export default async function handler(req, res) {
-  // 🔍 Log the incoming request origin for debugging
+  // 🔍 Log incoming request origin
   const origin = req.headers.origin || "unknown";
   console.log("🔍 Incoming request origin:", origin);
 
-  // ✅ Allowed origins (expand this once we know what GHL is really sending)
+  // ✅ Allowed origins (now includes productivemindset.uk)
   const allowedOrigins = [
+    "https://productivemindset.uk",
     "https://fitness.productivemindset.uk",
     "http://fitness.productivemindset.uk",
     "http://localhost:3000"
