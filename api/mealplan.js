@@ -1,50 +1,51 @@
-// api/mealplan.js
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // 🔒 Never expose this in frontend
-});
-
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ message: "Method not allowed" });
-  }
-
-  // Protect with API key
-  const apiKey = req.headers["x-api-key"];
-  if (apiKey !== process.env.MEALPLAN_API_KEY) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-
   try {
-    const { calories, foods } = req.body;
-
-    if (!calories || !foods || foods.length === 0) {
-      return res.status(400).json({ message: "Missing calories or foods input" });
+    // ✅ Only allow POST requests
+    if (req.method !== "POST") {
+      return res.status(405).json({ message: "Method not allowed" });
     }
 
-    // Prompt to OpenAI
-    const prompt = `
-    Create a 1-day fat loss meal plan for around ${calories} calories
-    using only these foods: ${foods.join(", ")}.
-    Ensure at least 30% of calories come from protein.
-    Format it clearly with meals, calories, protein, and totals.
-    `;
+    // ✅ API key check
+    const frontendKey = req.headers["x-api-key"];
+    if (frontendKey !== process.env.MEALPLAN_API_KEY) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
 
-    const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "You are a nutritionist creating simple, accurate 1-day fat loss meal plans." },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 600,
+    // ✅ Parse body
+    const { calories, foods } = req.body;
+    if (!calories || !foods || !Array.isArray(foods)) {
+      return res.status(400).json({ message: "Missing or invalid input" });
+    }
+
+    // ✅ OpenAI setup
+    const client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
     });
 
-    const plan = completion.choices[0].message.content;
+    // ✅ Create meal plan with GPT
+    const prompt = `
+      Create a 1-day fat loss meal plan with about ${calories} calories.
+      Only use these foods: ${foods.join(", ")}.
+      At least 30% of calories should come from protein.
+      Break it into breakfast, lunch, dinner, and snacks.
+      Include calorie + protein counts per meal, and totals.
+    `;
+
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const plan = response.choices[0].message.content;
 
     return res.status(200).json({ plan });
-  } catch (error) {
-    console.error("❌ Meal plan generation failed:", error);
-    return res.status(500).json({ message: "Error generating meal plan", error: error.message });
+  } catch (err) {
+    console.error("❌ Error in /api/mealplan:", err);
+    return res.status(500).json({
+      message: "Error generating meal plan",
+      error: err.message,
+    });
   }
 }
